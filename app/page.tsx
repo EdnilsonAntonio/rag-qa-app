@@ -37,11 +37,15 @@ function UploadPanel({
   activeNamespace,
   onDocSelect,
   onUpload,
+  isOpen,
+  onClose,
 }: {
   docs: UploadedDoc[];
   activeNamespace: string | null;
   onDocSelect: (ns: string) => void;
   onUpload: (doc: UploadedDoc) => void;
+  isOpen: boolean;
+  onClose: () => void;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -95,10 +99,20 @@ function UploadPanel({
   );
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isOpen ? "open" : ""}`}>
       <div className="sidebar-header">
-        <span className="logo-mark">▲</span>
-        <span className="logo-text">RAG·QA</span>
+        <div className="sidebar-brand">
+          <span className="logo-mark">▲</span>
+          <span className="logo-text">RAG·QA</span>
+        </div>
+        <button
+          type="button"
+          className="sidebar-close"
+          onClick={onClose}
+          aria-label="Close menu"
+        >
+          ×
+        </button>
       </div>
 
       {/* Drop zone */}
@@ -161,13 +175,23 @@ function UploadPanel({
 
       <div className="sidebar-footer">
         <p>Built with Next.js · LangChain · Pinecone</p>
-        <p>
+        <p className="sidebar-footer-links">
           <a
             href="https://ednilsonantonio.netlify.app/"
             target="_blank"
             rel="noopener noreferrer"
           >
             Ednilson António
+          </a>
+          <span className="sidebar-footer-sep" aria-hidden="true">
+            ·
+          </span>
+          <a
+            href="https://github.com/EdnilsonAntonio/rag-qa-app"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Github repository
           </a>
         </p>
       </div>
@@ -217,7 +241,7 @@ function EmptyState({ hasDoc }: { hasDoc: boolean }) {
       ) : (
         <>
           <p className="empty-title">No document selected</p>
-          <p className="empty-sub">Upload a PDF on the left to get started.</p>
+          <p className="empty-sub">Open the menu and upload a PDF to get started.</p>
         </>
       )}
     </div>
@@ -231,6 +255,7 @@ export default function Home() {
   const [messagesByNs, setMessagesByNs] = useState<Record<string, Message[]>>({});
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -256,7 +281,20 @@ export default function Home() {
       return exists ? prev : [doc, ...prev];
     });
     setActiveNamespace(doc.namespace);
+    setSidebarOpen(false);
   };
+
+  const handleDocSelect = (namespace: string) => {
+    setActiveNamespace(namespace);
+    setSidebarOpen(false);
+  };
+
+  useEffect(() => {
+    document.body.style.overflow = sidebarOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [sidebarOpen]);
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() || !activeNamespace || isStreaming) return;
@@ -356,12 +394,20 @@ export default function Home() {
           --sidebar-w: 260px;
         }
 
-        html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-sans); }
+        html, body {
+          height: 100%;
+          min-height: 100dvh;
+          background: var(--bg);
+          color: var(--text);
+          font-family: var(--font-sans);
+          -webkit-text-size-adjust: 100%;
+        }
 
         .layout {
           display: grid;
           grid-template-columns: var(--sidebar-w) 1fr;
           height: 100vh;
+          height: 100dvh;
           overflow: hidden;
         }
 
@@ -379,9 +425,54 @@ export default function Home() {
         .sidebar-header {
           display: flex;
           align-items: center;
+          justify-content: space-between;
           gap: 8px;
           padding: 0 4px;
           margin-bottom: 4px;
+        }
+
+        .sidebar-brand {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .sidebar-close,
+        .menu-btn {
+          display: none;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid var(--border);
+          background: var(--bg3);
+          color: var(--text-muted);
+          cursor: pointer;
+          transition: border-color 0.15s, color 0.15s, background 0.15s;
+          flex-shrink: 0;
+        }
+
+        .sidebar-close {
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          font-size: 20px;
+          line-height: 1;
+        }
+
+        .menu-btn {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          font-size: 16px;
+        }
+
+        .sidebar-close:hover,
+        .menu-btn:hover {
+          border-color: var(--border-hover);
+          color: var(--text);
+        }
+
+        .sidebar-backdrop {
+          display: none;
         }
 
         .logo-mark {
@@ -553,6 +644,17 @@ export default function Home() {
           line-height: 1.6;
         }
 
+        .sidebar-footer-links {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 4px 6px;
+        }
+
+        .sidebar-footer-sep {
+          color: var(--text-dim);
+        }
+
         .sidebar-footer a {
           color: var(--text-muted);
           text-decoration: none;
@@ -568,8 +670,10 @@ export default function Home() {
           display: flex;
           flex-direction: column;
           height: 100vh;
+          height: 100dvh;
           overflow: hidden;
           background: var(--bg);
+          min-width: 0;
         }
 
         /* Top bar */
@@ -577,10 +681,19 @@ export default function Home() {
           display: flex;
           align-items: center;
           padding: 14px 28px;
+          padding-top: max(14px, env(safe-area-inset-top));
           border-bottom: 1px solid var(--border);
           gap: 12px;
           flex-shrink: 0;
           min-height: 56px;
+        }
+
+        .topbar-main {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+          flex: 1;
         }
 
         .topbar-doc {
@@ -588,6 +701,10 @@ export default function Home() {
           font-weight: 500;
           color: var(--text);
           font-family: var(--font-mono);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          min-width: 0;
         }
 
         .topbar-chunks {
@@ -598,6 +715,8 @@ export default function Home() {
           padding: 2px 8px;
           border-radius: 20px;
           border: 1px solid var(--border);
+          flex-shrink: 0;
+          white-space: nowrap;
         }
 
         .topbar-placeholder {
@@ -817,29 +936,171 @@ export default function Home() {
           padding: 0 4px;
           font-family: var(--font-mono);
         }
+
+        /* ── Mobile & tablet ── */
+        @media (max-width: 768px) {
+          .layout {
+            grid-template-columns: 1fr;
+          }
+
+          .sidebar-backdrop {
+            display: block;
+            position: fixed;
+            inset: 0;
+            z-index: 90;
+            background: rgba(0, 0, 0, 0.55);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+          }
+
+          .sidebar-backdrop.visible {
+            opacity: 1;
+            pointer-events: auto;
+          }
+
+          .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            z-index: 100;
+            width: min(300px, 88vw);
+            max-width: 100%;
+            padding-top: max(20px, env(safe-area-inset-top));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+            transform: translateX(-105%);
+            transition: transform 0.25s ease;
+            box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
+          }
+
+          .sidebar.open {
+            transform: translateX(0);
+          }
+
+          .sidebar-close,
+          .menu-btn {
+            display: flex;
+          }
+
+          .topbar {
+            padding: 12px 16px;
+            padding-top: max(12px, env(safe-area-inset-top));
+            gap: 10px;
+          }
+
+          .messages {
+            padding: 20px 16px;
+            gap: 18px;
+          }
+
+          .empty-state {
+            padding: 0 20px 60px;
+          }
+
+          .empty-title {
+            font-size: 18px;
+            text-align: center;
+          }
+
+          .empty-sub {
+            text-align: center;
+            max-width: 280px;
+          }
+
+          .message-row {
+            gap: 8px;
+          }
+
+          .avatar {
+            width: 26px;
+            height: 26px;
+            font-size: 12px;
+          }
+
+          .bubble {
+            max-width: min(560px, 88%);
+            padding: 11px 14px;
+            font-size: 15px;
+          }
+
+          .doc-name {
+            max-width: none;
+          }
+
+          .drop-zone {
+            padding: 20px 14px;
+            min-height: 100px;
+          }
+
+          .input-bar {
+            padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+          }
+
+          .input-hint {
+            display: none;
+          }
+
+          .send-btn {
+            width: 40px;
+            height: 40px;
+          }
+        }
+
+        @media (max-width: 380px) {
+          .topbar-chunks {
+            display: none;
+          }
+
+          .bubble {
+            max-width: 92%;
+          }
+        }
       `}</style>
 
       <div className="layout">
-        {/* Left: sidebar */}
+        <button
+          type="button"
+          className={`sidebar-backdrop ${sidebarOpen ? "visible" : ""}`}
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close menu"
+          tabIndex={sidebarOpen ? 0 : -1}
+        />
+
+        {/* Left: sidebar (drawer on mobile) */}
         <UploadPanel
           docs={docs}
           activeNamespace={activeNamespace}
-          onDocSelect={setActiveNamespace}
+          onDocSelect={handleDocSelect}
           onUpload={handleUpload}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
         />
 
         {/* Right: chat */}
         <div className="main">
           {/* Top bar */}
           <div className="topbar">
-            {activeDoc ? (
-              <>
-                <span className="topbar-doc">◈ {activeDoc.fileName}</span>
-                <span className="topbar-chunks">{activeDoc.chunkCount} chunks indexed</span>
-              </>
-            ) : (
-              <span className="topbar-placeholder">No document selected</span>
-            )}
+            <button
+              type="button"
+              className="menu-btn"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open documents and upload"
+            >
+              ☰
+            </button>
+            <div className="topbar-main">
+              {activeDoc ? (
+                <>
+                  <span className="topbar-doc">◈ {activeDoc.fileName}</span>
+                  <span className="topbar-chunks">
+                    {activeDoc.chunkCount} chunks indexed
+                  </span>
+                </>
+              ) : (
+                <span className="topbar-placeholder">No document selected</span>
+              )}
+            </div>
           </div>
 
           {/* Messages or empty state */}
