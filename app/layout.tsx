@@ -13,8 +13,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RAG·QA",
-  description: "Chat with your PDF documents using RAG",
+  title: "RAG·QA — Chat with your PDFs using RAG",
+  description:
+    "Upload PDFs, ask questions, and get cited answers powered by LangChain, OpenAI, and Pinecone.",
+  openGraph: {
+    title: "RAG·QA",
+    description: "Chat with your PDF documents using retrieval-augmented generation",
+    type: "website",
+  },
 };
 
 export const viewport = {
