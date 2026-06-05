@@ -8,6 +8,7 @@ import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts
 import { createHistoryAwareRetriever } from "@langchain/classic/chains/history_aware_retriever";
 import { createStuffDocumentsChain } from "@langchain/classic/chains/combine_documents";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import { supabase } from "@/lib/supabase";
 
 // Shape of each message the frontend sends
 interface ChatMessage {
@@ -18,6 +19,7 @@ interface ChatMessage {
 interface ChatRequest {
   messages: ChatMessage[];
   namespace: string; // from the ingest response
+  docId: string | null; // from the ingest response
 }
 
 /** Vague / holistic questions need more diverse chunks than a single fact lookup. */
@@ -30,7 +32,7 @@ function isBroadQuestion(question: string): boolean {
 
 export async function POST(req: Request) {
   try {
-    const { messages, namespace } = (await req.json()) as ChatRequest;
+    const { messages, namespace, docId } = (await req.json()) as ChatRequest;
 
     if (!messages?.length || !namespace) {
       return NextResponse.json(
@@ -42,6 +44,17 @@ export async function POST(req: Request) {
     // 1. Separate the current question from conversation history
     const history = messages.slice(0, -1);
     const currentQuestion = messages.at(-1)!.content;
+
+    // 1.5. Persist the user message to Supabase
+    if (docId) {
+      const { error: userMsgErr } = await supabase.from("messages").insert({
+        doc_id: docId,
+        user_id: null, // to be populated in Phase 2
+        role: "user",
+        content: currentQuestion,
+      });
+      if (userMsgErr) console.error("[chat] Error saving user message:", userMsgErr.message);
+    }
 
     // 2. Connect to the same Pinecone namespace used during ingest
     const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
@@ -156,13 +169,39 @@ Context excerpts:
 
     const readableStream = new ReadableStream({
       async start(controller) {
+        let assistantResponse = "";
+        let retrievedContext: any[] = [];
+
         for await (const chunk of stream) {
-          // retrievalChain streams several event types — we only want the answer text
+          // retrievalChain streams several event types
+          if (chunk.context) {
+            retrievedContext = chunk.context; // capture the retrieved documents
+          }
           if (chunk.answer) {
+            assistantResponse += chunk.answer;
             controller.enqueue(encoder.encode(chunk.answer));
           }
         }
         controller.close();
+
+        // After stream is done, persist assistant message
+        if (docId && assistantResponse) {
+          // Extrair as fontes para o campo citations
+          const citations = retrievedContext.map((doc, idx) => ({
+            id: idx + 1,
+            source: doc.metadata?.source || "Unknown",
+            text: doc.pageContent.substring(0, 100) + "...",
+          }));
+
+          const { error: botMsgErr } = await supabase.from("messages").insert({
+            doc_id: docId,
+            user_id: null,
+            role: "assistant",
+            content: assistantResponse,
+            citations: citations,
+          });
+          if (botMsgErr) console.error("[chat] Error saving assistant message:", botMsgErr.message);
+        }
       },
     });
 

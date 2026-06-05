@@ -15,6 +15,7 @@
     "@langchain/pinecone": "^1.0.3",
     "@langchain/textsplitters": "^1.0.1",
     "@pinecone-database/pinecone": "^5.1.2",
+    "@supabase/supabase-js": "^2.107.0",
     "ai": "^6.0.187",
     "langchain": "^1.4.1",
     "next": "16.2.6",

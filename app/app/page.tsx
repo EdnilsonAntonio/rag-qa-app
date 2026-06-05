@@ -14,6 +14,7 @@ interface UploadedDoc {
   namespace: string;
   chunkCount: number;
   uploadedAt: Date;
+  docId: string | null;
 }
 
 // ── Markdown renderer (no external deps) ────────────────────────────────────
@@ -79,6 +80,7 @@ function UploadPanel({
           namespace: data.namespace,
           chunkCount: data.chunkCount,
           uploadedAt: new Date(),
+          docId: data.docId,
         });
       } catch (err: unknown) {
         setUploadError(err instanceof Error ? err.message : "Upload failed.");
@@ -322,6 +324,7 @@ export default function Home() {
         body: JSON.stringify({
           messages: nextMessages,
           namespace: activeNamespace,
+          docId: activeDoc?.docId || null,
         }),
       });
 

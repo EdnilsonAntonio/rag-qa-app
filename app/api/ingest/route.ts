@@ -7,6 +7,7 @@ import { PineconeStore } from "@langchain/pinecone";
 import { Pinecone } from "@pinecone-database/pinecone";
 import { PDFParse } from "pdf-parse";
 import { getPath } from "pdf-parse/worker";
+import { supabase } from "@/lib/supabase";
 
 PDFParse.setWorker(pathToFileURL(getPath()).href);
 
@@ -58,17 +59,36 @@ export async function POST(req: Request) {
       apiKey: process.env.OPENAI_API_KEY!,
     });
 
+    const namespace = file.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+
     await PineconeStore.fromDocuments(chunks, embeddings, {
       pineconeIndex,
-      // Optional: namespace isolates this doc from others
-      namespace: file.name.replace(/[^a-zA-Z0-9_-]/g, "_"),
+      namespace,
     });
+
+    // 5. Persistir metadados do documento no Supabase
+    // user_id é null nesta fase — será preenchido na Fase 2 (KindeAuth)
+    const { data: docRecord, error: dbError } = await supabase
+      .from("documents")
+      .insert({
+        user_id: null,
+        pinecone_namespace: namespace,
+        nome_ficheiro: file.name,
+      })
+      .select("id")
+      .single();
+
+    if (dbError) {
+      // Erro não-crítico: a vectorização já foi feita. Registamos mas não falhamos.
+      console.error("[ingest] Erro ao guardar metadados no Supabase:", dbError.message);
+    }
 
     return NextResponse.json({
       success: true,
       fileName: file.name,
       chunkCount: chunks.length,
-      namespace: file.name.replace(/[^a-zA-Z0-9_-]/g, "_"),
+      namespace,
+      docId: docRecord?.id ?? null,
     });
 
   } catch (err) {
