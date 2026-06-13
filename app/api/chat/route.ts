@@ -8,6 +8,7 @@ import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts
 import { createHistoryAwareRetriever } from "@langchain/classic/chains/history_aware_retriever";
 import { createStuffDocumentsChain } from "@langchain/classic/chains/combine_documents";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import { getKindeServerSession } from "@kinde-oss/kinde-auth-nextjs/server";
 import { supabase } from "@/lib/supabase";
 
 // Shape of each message the frontend sends
@@ -32,31 +33,77 @@ function isBroadQuestion(question: string): boolean {
 
 export async function POST(req: Request) {
   try {
+    // 0. Verificar sessão Kinde
+    const { getUser, isAuthenticated } = getKindeServerSession();
+    const authenticated = await isAuthenticated();
+
+    if (!authenticated) {
+      return NextResponse.json(
+        { error: "Não autorizado. Por favor inicie sessão." },
+        { status: 401 }
+      );
+    }
+
+    const user = await getUser();
+    const userId = user?.id ?? null;
+
     const { messages, namespace, docId } = (await req.json()) as ChatRequest;
 
     if (!messages?.length || !namespace) {
       return NextResponse.json(
-        { error: "messages and namespace are required." },
+        { error: "messages e namespace são obrigatórios." },
         { status: 400 }
       );
     }
 
-    // 1. Separate the current question from conversation history
+    // 0.5. Garantir que o utilizador existe na tabela users do Supabase
+    if (userId) {
+      const { error: userErr } = await supabase
+        .from("users")
+        .upsert({
+          id: userId,
+          email: user?.email || "",
+        }, { onConflict: "id" });
+
+      if (userErr) {
+        console.error("[chat] Erro ao garantir utilizador no Supabase:", userErr.message);
+      }
+    }
+
+    // 1. Validar ownership: garantir que o docId pertence ao utilizador autenticado
+    if (docId && userId) {
+      const { data: docOwner, error: ownerErr } = await supabase
+        .from("documents")
+        .select("id")
+        .eq("id", docId)
+        .eq("user_id", userId)
+        .single();
+
+      if (ownerErr || !docOwner) {
+        console.warn("[chat] Tentativa de acesso não autorizado ao documento:", docId, "por utilizador:", userId);
+        return NextResponse.json(
+          { error: "Acesso negado. Este documento não pertence ao utilizador autenticado." },
+          { status: 403 }
+        );
+      }
+    }
+
+    // 2. Separate the current question from conversation history
     const history = messages.slice(0, -1);
     const currentQuestion = messages.at(-1)!.content;
 
-    // 1.5. Persist the user message to Supabase
+    // 2.5. Persist the user message to Supabase
     if (docId) {
       const { error: userMsgErr } = await supabase.from("messages").insert({
         doc_id: docId,
-        user_id: null, // to be populated in Phase 2
+        user_id: userId,
         role: "user",
         content: currentQuestion,
       });
-      if (userMsgErr) console.error("[chat] Error saving user message:", userMsgErr.message);
+      if (userMsgErr) console.error("[chat] Erro ao guardar mensagem do utilizador:", userMsgErr.message);
     }
 
-    // 2. Connect to the same Pinecone namespace used during ingest
+    // 3. Connect to the same Pinecone namespace used during ingest
     const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
     const pineconeIndex = pinecone.index(process.env.PINECONE_INDEX_NAME!);
 
@@ -81,14 +128,14 @@ export async function POST(req: Request) {
         : { k: 6 }
     );
 
-    // 3. The LLM used for both retrieval rephrasing and final answer
+    // 4. The LLM used for both retrieval rephrasing and final answer
     const llm = new ChatOpenAI({
       model: "gpt-4o",
       apiKey: process.env.OPENAI_API_KEY!,
       streaming: true,
     });
 
-    // 4. History-aware retriever:
+    // 5. History-aware retriever:
     //    Rephrases follow-up questions into standalone questions
     //    before hitting Pinecone, so context from prior turns isn't lost.
     //    e.g. "What did it say about that?" → "What did the document say about X?"
@@ -113,7 +160,7 @@ Rules:
       rephrasePrompt: historyAwarePrompt,
     });
 
-    // 5. The answer prompt — instructs the model to cite sources and stay grounded
+    // 6. The answer prompt — instructs the model to cite sources and stay grounded
     const answerPrompt = ChatPromptTemplate.fromMessages([
       [
         "system",
@@ -135,7 +182,7 @@ Context excerpts:
       ["human", "{input}"],
     ]);
 
-    // 6. Chain: retriever → stuff docs into prompt → LLM answer
+    // 7. Chain: retriever → stuff docs into prompt → LLM answer
     const documentChain = await createStuffDocumentsChain({
       llm,
       prompt: answerPrompt,
@@ -152,14 +199,14 @@ Context excerpts:
       RunnablePassthrough.assign({ answer: documentChain }),
     ]);
 
-    // 7. Convert frontend message history to LangChain message objects
+    // 8. Convert frontend message history to LangChain message objects
     const chatHistory = history.map((m) =>
       m.role === "user"
         ? new HumanMessage(m.content)
         : new AIMessage(m.content)
     );
 
-    // 8. Stream the response back to the client
+    // 9. Stream the response back to the client
     const stream = await retrievalChain.stream({
       input: currentQuestion,
       chat_history: chatHistory,
@@ -184,23 +231,22 @@ Context excerpts:
         }
         controller.close();
 
-        // After stream is done, persist assistant message
+        // Após stream concluído, persistir mensagem do assistente
         if (docId && assistantResponse) {
-          // Extrair as fontes para o campo citations
           const citations = retrievedContext.map((doc, idx) => ({
             id: idx + 1,
-            source: doc.metadata?.source || "Unknown",
+            source: doc.metadata?.source || "Desconhecido",
             text: doc.pageContent.substring(0, 100) + "...",
           }));
 
           const { error: botMsgErr } = await supabase.from("messages").insert({
             doc_id: docId,
-            user_id: null,
+            user_id: userId,
             role: "assistant",
             content: assistantResponse,
             citations: citations,
           });
-          if (botMsgErr) console.error("[chat] Error saving assistant message:", botMsgErr.message);
+          if (botMsgErr) console.error("[chat] Erro ao guardar mensagem do assistente:", botMsgErr.message);
         }
       },
     });
@@ -215,7 +261,7 @@ Context excerpts:
   } catch (err) {
     console.error("[chat] error:", err);
     return NextResponse.json(
-      { error: "Chat failed. Check server logs." },
+      { error: "Falha no chat. Verifique os logs do servidor." },
       { status: 500 }
     );
   }

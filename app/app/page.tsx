@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { LogoutLink } from "@kinde-oss/kinde-auth-nextjs/components";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Message {
@@ -177,6 +178,10 @@ function UploadPanel({
       )}
 
       <div className="sidebar-footer">
+        <LogoutLink className="logout-btn">
+          <span className="doc-icon" style={{ color: "inherit" }}>⎋</span>
+          <span>Log out</span>
+        </LogoutLink>
         <p>Built with Next.js · LangChain · Pinecone</p>
         <p className="sidebar-footer-links">
           <a
@@ -673,6 +678,30 @@ export default function Home() {
 
         .sidebar-footer a:hover {
           color: var(--accent);
+        }
+
+        .logout-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 8px;
+          background: transparent;
+          border: 1px solid var(--border);
+          cursor: pointer;
+          transition: all 0.15s;
+          width: 100%;
+          color: var(--text-muted);
+          text-decoration: none;
+          font-size: 12px;
+          font-family: var(--font-sans);
+          margin-bottom: 12px;
+        }
+
+        .logout-btn:hover {
+          background: rgba(255, 107, 107, 0.08);
+          border-color: rgba(255, 107, 107, 0.25);
+          color: #ff8888;
         }
 
         /* ── Main ── */

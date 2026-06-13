@@ -112,7 +112,7 @@ Ao final da Fase 1:
 
 ---
 
-# Fase 2: Autenticação e Segurança
+# Fase 2: Autenticação e Segurança ✅ (Concluído)
 
 ### Objetivo
 

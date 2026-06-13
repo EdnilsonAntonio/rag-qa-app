@@ -1,4 +1,10 @@
 import Link from "next/link";
+import {
+  LoginLink,
+  RegisterLink,
+  LogoutLink,
+} from "@kinde-oss/kinde-auth-nextjs/components";
+import { getKindeServerSession } from "@kinde-oss/kinde-auth-nextjs/server";
 
 const FEATURES = [
   {
@@ -59,7 +65,9 @@ const STACK = [
   "pdf-parse",
 ] as const;
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const { isAuthenticated } = getKindeServerSession();
+  const authenticated = await isAuthenticated();
   return (
     <>
       <style>{`
@@ -643,9 +651,25 @@ export default function LandingPage() {
               >
                 Github
               </a>
-              <Link href="/app" className="btn btn-primary">
-                Launch app →
-              </Link>
+               {authenticated ? (
+                <>
+                  <Link href="/app" className="btn btn-ghost">
+                    Go to App
+                  </Link>
+                  <LogoutLink className="btn btn-primary">
+                    Log out
+                  </LogoutLink>
+                </>
+              ) : (
+                <>
+                  <LoginLink className="btn btn-ghost">
+                    Log in
+                  </LoginLink>
+                  <RegisterLink className="btn btn-primary">
+                    Sign up →
+                  </RegisterLink>
+                </>
+              )}
             </div>
           </header>
 
